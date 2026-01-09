@@ -3,7 +3,7 @@
 WMBusDecoder::WMBusDecoder()
     : _state(MANCHESTER_IDLE), _lastBitTime(0), _lastBit(false),
       _bitPair(0), _currentByte(0), _bitCount(0), _frameComplete(false),
-      _expectedLength(0), _syncWord(0), _frameCount(0), _errorCount(0) {
+      _expectedLength(0), _syncWord(0), _frameCount(0), _errorCount(0), _crypto(nullptr) {
 }
 
 void WMBusDecoder::reset() {
@@ -237,10 +237,33 @@ bool WMBusDecoder::parseFrame(const std::vector<uint8_t> &frame, WMBusMeter &met
             if (ciField == 0x72 || ciField == 0x78) {
                 meter.encrypted = true;
                 Serial.println("[wM-Bus Parser] Encrypted telegram detected");
+
+                // Try to decrypt if crypto is available
+                if (_crypto && frame.size() > dataOffset) {
+                    size_t encryptedDataLen = frame.size() - dataOffset;
+                    uint8_t *decryptedData = new uint8_t[encryptedDataLen];
+
+                    if (_crypto->decrypt(meter, &frame[dataOffset], encryptedDataLen, decryptedData)) {
+                        meter.decrypted = true;
+                        Serial.println("[wM-Bus Parser] Decryption successful");
+
+                        // Parse decrypted data records
+                        // Create temporary frame with decrypted payload
+                        std::vector<uint8_t> decryptedFrame(frame.begin(), frame.begin() + dataOffset);
+                        decryptedFrame.insert(decryptedFrame.end(), decryptedData, decryptedData + encryptedDataLen);
+
+                        parseDataRecords(decryptedFrame.data(), decryptedFrame.size(), dataOffset, meter);
+
+                        delete[] decryptedData;
+                    } else {
+                        Serial.println("[wM-Bus Parser] Decryption failed - no key available");
+                        delete[] decryptedData;
+                    }
+                }
             }
         }
 
-        // Parse data records if not encrypted or if decrypted
+        // Parse data records if not encrypted
         if (!meter.encrypted && frame.size() > dataOffset) {
             parseDataRecords(frame.data(), frame.size(), dataOffset, meter);
         }

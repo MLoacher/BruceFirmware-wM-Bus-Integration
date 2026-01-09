@@ -75,6 +75,11 @@ JsonDocument BruceConfig::toJson() const {
         qrEntry["content"] = entry.content;
     }
 
+    // wM-Bus
+    JsonObject _wmbus = setting["wmbus"].to<JsonObject>();
+    _wmbus["preferredMode"] = wmbus.preferredMode;
+    _wmbus["aesKeysFile"] = wmbus.aesKeysFile;
+
     return jsonDoc;
 }
 
@@ -376,6 +381,18 @@ void BruceConfig::fromFile(bool checkFS) {
         count++;
         log_e("Fail to load qrCodes");
     }
+
+    // wM-Bus
+    if (!setting["wmbus"].isNull()) {
+        JsonObject wmbusObj = setting["wmbus"].as<JsonObject>();
+        if (!wmbusObj["preferredMode"].isNull()) {
+            wmbus.preferredMode = wmbusObj["preferredMode"].as<int>();
+        }
+        if (!wmbusObj["aesKeysFile"].isNull()) {
+            wmbus.aesKeysFile = wmbusObj["aesKeysFile"].as<String>();
+        }
+    }
+    // Note: wM-Bus config is optional, no count++ if missing
 
     validateConfig();
     if (count > 0) saveFile();

@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <vector>
 #include "wmbus_types.h"
+#include "wmbus_crypto.h"
 
 // Manchester decoder states
 enum ManchesterState {
@@ -31,6 +32,9 @@ public:
 
     // wM-Bus frame parsing
     bool parseFrame(const std::vector<uint8_t> &frame, WMBusMeter &meter);
+
+    // Crypto support
+    void setCrypto(WMBusCrypto *crypto) { _crypto = crypto; }
 
     // Statistics
     uint32_t getFrameCount() const { return _frameCount; }
@@ -74,6 +78,9 @@ private:
     // Statistics
     uint32_t _frameCount;
     uint32_t _errorCount;
+
+    // Crypto support
+    WMBusCrypto *_crypto;
 
     // Timing constants (microseconds)
     static const unsigned long BIT_TIME_T1 = 30;  // ~32.768 kbps

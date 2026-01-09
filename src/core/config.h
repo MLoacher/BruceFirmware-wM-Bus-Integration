@@ -82,6 +82,13 @@ public:
     int badUSBBLEKeyboardLayout = 0;
     int badUSBBLEKeyDelay = 50;
 
+    // wM-Bus
+    struct WMBusConfig {
+        int preferredMode;  // 0=T1, 1=C1, 2=Dual
+        String aesKeysFile;
+    };
+    WMBusConfig wmbus = {0, "/BruceWMBus/config/aes_keys.txt"};
+
     std::vector<String> disabledMenus = {};
 
     std::vector<QrCodeEntry> qrCodes = {

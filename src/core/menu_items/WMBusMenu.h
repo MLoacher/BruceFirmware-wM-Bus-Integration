@@ -4,6 +4,7 @@
 #include <MenuItemInterface.h>
 #include "modules/wmbus/wmbus_receiver.h"
 #include "modules/wmbus/wmbus_storage.h"
+#include "modules/wmbus/wmbus_crypto.h"
 
 class WMBusMenu : public MenuItemInterface {
 public:
@@ -31,10 +32,16 @@ private:
     // Configuration
     void configureModeSelection();
     void configureAESKeys();
+    void addAESKeyMenu();
+    void removeAESKeyMenu();
+    void viewAESKeysMenu();
 
     // Helper functions
     String formatTimestamp(uint32_t timestamp);
     String formatTemperature(int16_t temp_centidegree);
+
+    // Crypto instance (shared across all operations)
+    static WMBusCrypto crypto;
 };
 
 #endif // __WMBUS_MENU_H__

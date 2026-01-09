@@ -9,7 +9,7 @@ WMBusReceiver* WMBusReceiver::_instance = nullptr;
 WMBusReceiver::WMBusReceiver()
     : _currentMode(WMBUS_MODE_T1), _initialized(false), _receiving(false),
       _bitIndex(0), _lastBitTime(0), _telegramQueue(nullptr), _rxMutex(nullptr),
-      _telegramCount(0), _errorCount(0), _rxState(RX_STATE_IDLE), _expectedLength(0) {
+      _telegramCount(0), _errorCount(0), _rxState(RX_STATE_IDLE), _expectedLength(0), _crypto(nullptr) {
     memset((void*)_bitBuffer, 0, sizeof(_bitBuffer));
 }
 
@@ -336,4 +336,10 @@ uint16_t WMBusReceiver::calculateCRC(const uint8_t *data, uint16_t length) {
     // wM-Bus uses CRC-16 (polynomial 0x3D65)
     // TODO: Implement CRC calculation in Phase 2
     return 0;
+}
+
+void WMBusReceiver::setCrypto(WMBusCrypto *crypto) {
+    _crypto = crypto;
+    _decoder.setCrypto(crypto);
+    Serial.println("[wM-Bus] Crypto support enabled");
 }

@@ -4,6 +4,9 @@
 #include "core/mykeyboard.h"
 #include <time.h>
 
+// Static crypto instance
+WMBusCrypto WMBusMenu::crypto;
+
 void WMBusMenu::optionsMenu() {
     options = {
         {"Scan Mode",    [=]() { scanMenu(); }       },
@@ -32,12 +35,18 @@ void WMBusMenu::scanMenu() {
 void WMBusMenu::startScan(WMBusMode mode) {
     drawMainBorderWithTitle("wM-Bus Scan");
 
+    // Load AES keys if available
+    crypto.loadKeysFromFile("/BruceWMBus/config/aes_keys.txt");
+
     // Initialize receiver
     WMBusReceiver receiver;
     if (!receiver.init(mode)) {
         displayError("CC1101 init failed", true);
         return;
     }
+
+    // Set crypto support
+    receiver.setCrypto(&crypto);
 
     // Initialize storage
     WMBusStorage storage;
@@ -66,11 +75,29 @@ void WMBusMenu::startScan(WMBusMode mode) {
 
     // Main scanning loop
     uint32_t lastUpdate = 0;
+    uint32_t lastModeSwitch = 0;
     uint32_t meterCount = 0;
     String lastMeterId = "None";
     int8_t lastRSSI = 0;
+    WMBusMode currentMode = (mode == WMBUS_MODE_DUAL) ? WMBUS_MODE_T1 : mode;
+    bool isDualMode = (mode == WMBUS_MODE_DUAL);
 
     while (!check(EscPress)) {
+        // Dual mode: Switch between T1 and C1 every 5 seconds
+        if (isDualMode && (millis() - lastModeSwitch > 5000)) {
+            receiver.stopReception();
+
+            // Toggle mode
+            currentMode = (currentMode == WMBUS_MODE_T1) ? WMBUS_MODE_C1 : WMBUS_MODE_T1;
+            receiver.setMode(currentMode);
+            receiver.startReception();
+
+            lastModeSwitch = millis();
+
+            Serial.printf("[wM-Bus] Dual mode switched to %s\n",
+                          currentMode == WMBUS_MODE_T1 ? "T1" : "C1");
+        }
+
         // Update display every 500ms
         if (millis() - lastUpdate > 500) {
             // Clear update area
@@ -84,10 +111,17 @@ void WMBusMenu::startScan(WMBusMode mode) {
             padprintln("RSSI: " + String(lastRSSI) + " dBm");
             padprintln("");
 
+            // Show current mode in dual mode
+            if (isDualMode) {
+                tft.setTextColor(TFT_CYAN);
+                padprintln("Active: " + String(currentMode == WMBUS_MODE_T1 ? "T1" : "C1"));
+            }
+
             // Animated scanning indicator
             static int dots = 0;
             String anim = "Scanning";
             for (int i = 0; i < (dots % 4); i++) anim += ".";
+            tft.setTextColor(bruceConfig.priColor);
             padprintln(anim);
             dots++;
 
@@ -263,20 +297,119 @@ void WMBusMenu::configureModeSelection() {
 }
 
 void WMBusMenu::configureAESKeys() {
+    // Load keys from file
+    crypto.loadKeysFromFile("/BruceWMBus/config/aes_keys.txt");
+
+    options = {
+        {"Add Key",      [=]() { addAESKeyMenu(); }     },
+        {"View Keys",    [=]() { viewAESKeysMenu(); }   },
+        {"Remove Key",   [=]() { removeAESKeyMenu(); }  },
+        {"Back",         [=]() { configMenu(); }        },
+    };
+
+    loopOptions(options, MENU_TYPE_SUBMENU, "AES Keys");
+}
+
+void WMBusMenu::addAESKeyMenu() {
+    drawMainBorderWithTitle("Add AES Key");
+
+    tft.setCursor(BORDER_PAD_X, BORDER_PAD_Y);
+    tft.setTextSize(FP);
+    tft.setTextColor(bruceConfig.priColor);
+
+    padprintln("Enter Meter ID:");
+    padprintln("(16 hex chars)");
+    padprintln("");
+
+    String meterId = keyboard("", 16, "0123456789ABCDEF");
+    if (meterId.isEmpty() || meterId.length() != 16) {
+        displayError("Invalid Meter ID", true);
+        return;
+    }
+
+    drawMainBorderWithTitle("Add AES Key");
+    tft.setCursor(BORDER_PAD_X, BORDER_PAD_Y);
+    tft.setTextSize(FP);
+    tft.setTextColor(bruceConfig.priColor);
+
+    padprintln("Meter ID: " + meterId);
+    padprintln("");
+    padprintln("Enter AES Key:");
+    padprintln("(32 hex chars)");
+    padprintln("");
+
+    String key = keyboard("", 32, "0123456789ABCDEF");
+    if (key.isEmpty() || key.length() != 32) {
+        displayError("Invalid AES Key", true);
+        return;
+    }
+
+    // Add key to crypto
+    if (crypto.addKey(meterId, key)) {
+        // Save to file
+        crypto.saveKeysToFile("/BruceWMBus/config/aes_keys.txt");
+        displayInfo("Key added successfully", true);
+    } else {
+        displayError("Failed to add key", true);
+    }
+}
+
+void WMBusMenu::viewAESKeysMenu() {
     drawMainBorderWithTitle("AES Keys");
 
     tft.setCursor(BORDER_PAD_X, BORDER_PAD_Y);
     tft.setTextSize(FP);
-    padprintln("AES key management");
+    tft.setTextColor(bruceConfig.priColor);
+
+    size_t keyCount = crypto.getKeyCount();
+    padprintln("Total keys: " + String(keyCount));
     padprintln("");
-    padprintln("Not yet implemented");
-    padprintln("Coming in Phase 3");
+
+    if (keyCount == 0) {
+        padprintln("No keys configured");
+        padprintln("");
+        padprintln("Use 'Add Key' to add");
+        padprintln("AES-128 keys for");
+        padprintln("encrypted meters");
+    } else {
+        padprintln("Keys are stored in:");
+        padprintln("/BruceWMBus/config/");
+        padprintln("aes_keys.txt");
+        padprintln("");
+        padprintln("Format:");
+        padprintln("METER_ID,AES_KEY");
+    }
+
     padprintln("");
     printCenterFootnote("Press any key");
 
     while (!check(AnyKeyPress)) {
         delay(10);
     }
+}
+
+void WMBusMenu::removeAESKeyMenu() {
+    drawMainBorderWithTitle("Remove AES Key");
+
+    tft.setCursor(BORDER_PAD_X, BORDER_PAD_Y);
+    tft.setTextSize(FP);
+    tft.setTextColor(bruceConfig.priColor);
+
+    padprintln("Enter Meter ID:");
+    padprintln("(16 hex chars)");
+    padprintln("");
+
+    String meterId = keyboard("", 16, "0123456789ABCDEF");
+    if (meterId.isEmpty() || meterId.length() != 16) {
+        displayError("Invalid Meter ID", true);
+        return;
+    }
+
+    // Remove key
+    crypto.removeKey(meterId);
+    crypto.saveKeysToFile("/BruceWMBus/config/aes_keys.txt");
+
+    displayInfo("Key removed", true);
 }
 
 void WMBusMenu::drawIcon(float scale) {

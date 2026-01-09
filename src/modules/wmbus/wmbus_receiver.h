@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "wmbus_types.h"
 #include "wmbus_decoder.h"
+#include "wmbus_crypto.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
@@ -74,6 +75,9 @@ public:
     // RSSI measurement
     int8_t getCurrentRSSI();
 
+    // Crypto support
+    void setCrypto(WMBusCrypto *crypto);
+
 private:
     // CC1101 configuration helpers
     bool configureCC1101ForT1();
@@ -108,6 +112,9 @@ private:
 
     // Decoder
     WMBusDecoder _decoder;
+
+    // Crypto support (not owned, just a reference)
+    WMBusCrypto *_crypto;
 
     // Statistics
     volatile uint32_t _telegramCount;
