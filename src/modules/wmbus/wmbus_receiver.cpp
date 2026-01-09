@@ -32,10 +32,18 @@ bool WMBusReceiver::init(WMBusMode mode) {
         return false;
     }
 
+    _meterQueue = xQueueCreate(WMBUS_TELEGRAM_QUEUE_SIZE, sizeof(WMBusMeter));
+    if (_meterQueue == nullptr) {
+        Serial.println("[wM-Bus] Failed to create meter queue");
+        vQueueDelete(_telegramQueue);
+        return false;
+    }
+
     _rxMutex = xSemaphoreCreateMutex();
     if (_rxMutex == nullptr) {
         Serial.println("[wM-Bus] Failed to create mutex");
         vQueueDelete(_telegramQueue);
+        vQueueDelete(_meterQueue);
         return false;
     }
 
@@ -63,6 +71,11 @@ void WMBusReceiver::stop() {
     if (_telegramQueue) {
         vQueueDelete(_telegramQueue);
         _telegramQueue = nullptr;
+    }
+
+    if (_meterQueue) {
+        vQueueDelete(_meterQueue);
+        _meterQueue = nullptr;
     }
 
     if (_rxMutex) {
@@ -186,6 +199,9 @@ void WMBusReceiver::startReception() {
     _lastBitTime = 0;
     memset((void*)_bitBuffer, 0, sizeof(_bitBuffer));
 
+    // Reset decoder
+    _decoder.reset();
+
     // Attach interrupt to GDO0 pin
     attachInterrupt(digitalPinToInterrupt(bruceConfigPins.CC1101_bus.io0),
                     gdoISR, CHANGE);
@@ -214,29 +230,43 @@ void IRAM_ATTR WMBusReceiver::handleGdoInterrupt() {
     unsigned long now = micros();
     bool bitValue = digitalRead(bruceConfigPins.CC1101_bus.io0);
 
-    // Store bit with timestamp for Manchester decoding
-    // This is a simplified version - full Manchester decoding will be
-    // implemented in wmbus_decoder.cpp
+    // Feed bit to Manchester decoder
+    // Note: decoder.addBit() is called from ISR, but decoder handles this safely
+    if (_decoder.addBit(bitValue, now)) {
+        // Frame is complete!
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    if (_bitIndex < WMBUS_BIT_BUFFER_SIZE) {
-        // Pack bits into buffer (1 bit per slot for now)
-        uint32_t bitPos = _bitIndex / 32;
-        uint32_t bitOffset = _bitIndex % 32;
+        // Get frame from decoder (this also resets decoder for next frame)
+        std::vector<uint8_t> frame = _decoder.getFrame();
 
-        if (bitValue) {
-            _bitBuffer[bitPos] |= (1UL << bitOffset);
-        } else {
-            _bitBuffer[bitPos] &= ~(1UL << bitOffset);
+        if (frame.size() > 0) {
+            // Create telegram struct
+            WMBusTelegram telegram;
+            telegram.length = min((size_t)frame.size(), (size_t)WMBUS_MAX_TELEGRAM_SIZE);
+            memcpy(telegram.data, frame.data(), telegram.length);
+            telegram.timestamp = millis() / 1000;  // Unix timestamp (approx)
+            telegram.rssi = getCurrentRSSI();
+
+            // Queue telegram
+            xQueueSendFromISR(_telegramQueue, &telegram, &xHigherPriorityTaskWoken);
+
+            // Parse telegram into meter data
+            WMBusMeter meter;
+            meter.timestamp = telegram.timestamp;
+            meter.rssi = telegram.rssi;
+
+            if (_decoder.parseFrame(frame, meter)) {
+                // Queue parsed meter
+                xQueueSendFromISR(_meterQueue, &meter, &xHigherPriorityTaskWoken);
+            }
+
+            _telegramCount++;
         }
 
-        _bitIndex++;
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 
     _lastBitTime = now;
-
-    // Check for timeout (end of telegram)
-    // If more than 5ms since last bit, process buffer
-    // This will be handled in main loop, not in ISR
 }
 
 void WMBusReceiver::processBitBuffer() {
@@ -254,6 +284,17 @@ bool WMBusReceiver::getTelegram(WMBusTelegram &telegram) {
     if (!_telegramQueue) return false;
 
     return xQueueReceive(_telegramQueue, &telegram, 0) == pdTRUE;
+}
+
+bool WMBusReceiver::hasMeter() {
+    if (!_meterQueue) return false;
+    return uxQueueMessagesWaiting(_meterQueue) > 0;
+}
+
+bool WMBusReceiver::getMeter(WMBusMeter &meter) {
+    if (!_meterQueue) return false;
+
+    return xQueueReceive(_meterQueue, &meter, 0) == pdTRUE;
 }
 
 int8_t WMBusReceiver::getCurrentRSSI() {

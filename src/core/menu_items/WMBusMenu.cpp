@@ -98,44 +98,30 @@ void WMBusMenu::startScan(WMBusMode mode) {
             lastUpdate = millis();
         }
 
-        // Check for received telegrams
-        WMBusTelegram telegram;
-        if (receiver.hasTelegram() && receiver.getTelegram(telegram)) {
-            // TODO: Parse telegram into WMBusMeter struct (Phase 2)
-            // For now, just show raw data
+        // Check for received & parsed meters
+        WMBusMeter meter;
+        if (receiver.hasMeter() && receiver.getMeter(meter)) {
+            // Meter is already fully parsed by decoder!
 
-            // Create placeholder meter data
-            WMBusMeter meter;
-            meter.timestamp = telegram.timestamp;
-            meter.rssi = telegram.rssi;
+            // Try to add to storage
+            if (storage.addReading(meter)) {
+                meterCount++;
+                lastMeterId = meter.getIdString();
+                lastRSSI = meter.rssi;
 
-            // Extract basic info from telegram (L-field, C-field, M-field)
-            if (telegram.length >= 12) {
-                // Manufacturer (2 bytes, positions 2-3)
-                meter.manufacturer = telegram.data[2] | (telegram.data[3] << 8);
+                // Flash success message with details
+                tft.fillRect(BORDER_PAD_X, tftHeight - 60, tftWidth - 2 * BORDER_PAD_X, 40, bruceConfig.bgColor);
+                tft.setCursor(BORDER_PAD_X, tftHeight - 60);
+                tft.setTextColor(TFT_GREEN);
+                padprintln("New: " + lastMeterId);
+                padprintln(meter.getManufacturerName() + " " + meter.getMediumName());
 
-                // Meter ID (4 bytes BCD, positions 4-7)
-                memcpy(meter.id, &telegram.data[4], 4);
-
-                // Version (position 8)
-                meter.version = telegram.data[8];
-
-                // Medium (position 9)
-                meter.medium = telegram.data[9];
-
-                // Try to add to storage
-                if (storage.addReading(meter)) {
-                    meterCount++;
-                    lastMeterId = meter.getIdString();
-                    lastRSSI = meter.rssi;
-
-                    // Flash success message
-                    tft.fillRect(BORDER_PAD_X, tftHeight - 40, tftWidth - 2 * BORDER_PAD_X, 20, bruceConfig.bgColor);
-                    tft.setCursor(BORDER_PAD_X, tftHeight - 40);
-                    tft.setTextColor(TFT_GREEN);
-                    padprintln("New: " + lastMeterId);
-                    delay(300);
+                if (meter.encrypted) {
+                    tft.setTextColor(TFT_YELLOW);
+                    padprintln("Encrypted!");
                 }
+
+                delay(500);
             }
         }
 

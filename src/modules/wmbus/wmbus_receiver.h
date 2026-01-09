@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "wmbus_types.h"
+#include "wmbus_decoder.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
@@ -61,6 +62,10 @@ public:
     bool hasTelegram();
     bool getTelegram(WMBusTelegram &telegram);
 
+    // Parsed meter retrieval
+    bool hasMeter();
+    bool getMeter(WMBusMeter &meter);
+
     // Statistics
     uint32_t getTelegramCount() const { return _telegramCount; }
     uint32_t getErrorCount() const { return _errorCount; }
@@ -98,7 +103,11 @@ private:
 
     // Telegram queue
     QueueHandle_t _telegramQueue;
+    QueueHandle_t _meterQueue;
     SemaphoreHandle_t _rxMutex;
+
+    // Decoder
+    WMBusDecoder _decoder;
 
     // Statistics
     volatile uint32_t _telegramCount;
