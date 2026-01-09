@@ -303,9 +303,51 @@ std::vector<WMBusMeter> WMBusStorage::getAllReadings(const String &filepath) {
 
         if (line.isEmpty()) continue;
 
-        // TODO: Parse CSV line into WMBusMeter struct
-        // For now, we'll implement basic parsing in Phase 2
-        // This is primarily for display purposes
+        // Parse CSV: Timestamp,MeterID,Manufacturer,MfrName,Version,Medium,MediumName,
+        //            TotalEnergy,FlowTemp,ReturnTemp,Power,Volume,FlowRate,
+        //            RSSI,Encrypted,Decrypted,AESKeyIndex
+        WMBusMeter meter;
+
+        int fieldIndex = 0;
+        int lastPos = 0;
+        for (int i = 0; i <= line.length(); i++) {
+            if (i == line.length() || line[i] == ',') {
+                String field = line.substring(lastPos, i);
+                field.trim();
+
+                switch (fieldIndex) {
+                    case 0: meter.timestamp = field.toInt(); break;
+                    case 1: {
+                        // Parse hex ID string (16 chars = 8 bytes)
+                        for (int j = 0; j < 8 && j * 2 < field.length(); j++) {
+                            String byteStr = field.substring(j * 2, j * 2 + 2);
+                            meter.id[j] = (uint8_t)strtol(byteStr.c_str(), nullptr, 16);
+                        }
+                        break;
+                    }
+                    case 2: meter.manufacturer = (uint16_t)strtol(field.c_str(), nullptr, 16); break;
+                    case 3: break; // MfrName (skip, can regenerate)
+                    case 4: meter.version = (uint8_t)strtol(field.c_str(), nullptr, 16); break;
+                    case 5: meter.medium = (uint8_t)strtol(field.c_str(), nullptr, 16); break;
+                    case 6: break; // MediumName (skip, can regenerate)
+                    case 7: meter.total_energy = field.toInt(); break;
+                    case 8: meter.flow_temp = (int16_t)(field.toFloat() * 100); break;
+                    case 9: meter.return_temp = (int16_t)(field.toFloat() * 100); break;
+                    case 10: meter.power = field.toInt(); break;
+                    case 11: meter.volume = (uint32_t)(field.toFloat() * 1000); break;
+                    case 12: meter.flow_rate = (uint16_t)(field.toFloat() * 1000); break;
+                    case 13: meter.rssi = field.toInt(); break;
+                    case 14: meter.encrypted = (field.toInt() != 0); break;
+                    case 15: meter.decrypted = (field.toInt() != 0); break;
+                    case 16: meter.aes_key_index = field.toInt(); break;
+                }
+
+                fieldIndex++;
+                lastPos = i + 1;
+            }
+        }
+
+        readings.push_back(meter);
     }
 
     file.close();
