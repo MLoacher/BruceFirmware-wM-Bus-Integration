@@ -114,20 +114,11 @@ struct WMBusConfig {
     bool auto_save;             // Auto-save received telegrams to SD
     uint16_t dual_mode_interval; // Switch interval in dual mode (ms)
 
-    // MQTT settings (for Home Mode)
-    String mqtt_server;
-    uint16_t mqtt_port;
-    String mqtt_user;
-    String mqtt_pass;
-    bool mqtt_ha_discovery;     // Enable Home Assistant auto-discovery
-
     // AES keys (meter ID -> key mapping)
     // Will be stored in BruceConfig
 
     WMBusConfig() : mode(WMBUS_MODE_T1), auto_save(true),
-                    dual_mode_interval(5000), mqtt_server(""),
-                    mqtt_port(1883), mqtt_user(""), mqtt_pass(""),
-                    mqtt_ha_discovery(true) {}
+                    dual_mode_interval(5000) {}
 };
 
 #endif // WMBUS_TYPES_H

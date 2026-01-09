@@ -5,6 +5,7 @@
 #include "modules/wmbus/wmbus_receiver.h"
 #include "modules/wmbus/wmbus_storage.h"
 #include "modules/wmbus/wmbus_crypto.h"
+#include "modules/wmbus/wmbus_zigbee.h"
 
 class WMBusMenu : public MenuItemInterface {
 public:
@@ -18,12 +19,16 @@ public:
 private:
     // Sub-menus
     void scanMenu();
+    void homeMenu();
     void viewDataMenu();
     void configMenu();
 
     // Scan mode
     void startScan(WMBusMode mode);
     void displayLiveScanning(WMBusReceiver &receiver, WMBusStorage &storage);
+
+    // Home mode
+    void startHomeMode();
 
     // View data
     void displayMeterList();

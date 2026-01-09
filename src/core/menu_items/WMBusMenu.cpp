@@ -10,6 +10,7 @@ WMBusCrypto WMBusMenu::crypto;
 void WMBusMenu::optionsMenu() {
     options = {
         {"Scan Mode",    [=]() { scanMenu(); }       },
+        {"Home Mode",    [=]() { homeMenu(); }       },
         {"View Data",    [=]() { viewDataMenu(); }   },
         {"Config",       [=]() { configMenu(); }     },
     };
@@ -273,6 +274,106 @@ void WMBusMenu::displayMeterDetail(const WMBusMeter &meter) {
     while (!check(AnyKeyPress)) {
         delay(10);
     }
+}
+
+void WMBusMenu::homeMenu() {
+    options = {
+        {"Start Home Mode", [=]() { startHomeMode(); } },
+        {"Back",            [=]() { optionsMenu(); }   },
+    };
+
+    loopOptions(options, MENU_TYPE_SUBMENU, "Home Mode");
+}
+
+void WMBusMenu::startHomeMode() {
+    drawMainBorderWithTitle("wM-Bus Home Mode");
+
+    tft.setCursor(BORDER_PAD_X, BORDER_PAD_Y);
+    tft.setTextSize(FP);
+    tft.setTextColor(bruceConfig.priColor);
+
+    // Load AES keys
+    crypto.loadKeysFromFile(bruceConfig.wmbus.aesKeysFile);
+
+    // Initialize receiver (T1 mode by default, configurable)
+    WMBusMode mode = (WMBusMode)bruceConfig.wmbus.preferredMode;
+    WMBusReceiver receiver;
+    if (!receiver.init(mode)) {
+        displayError("CC1101 init failed", true);
+        return;
+    }
+    receiver.setCrypto(&crypto);
+
+    // Initialize Zigbee
+    WMBusZigbee zigbee;
+    if (!zigbee.begin()) {
+        displayError("Zigbee init failed", true);
+        receiver.stop();
+        return;
+    }
+
+    // Display status
+    padprintln("Home Mode Active");
+    padprintln("");
+    padprintln("Mode: " + String(mode == WMBUS_MODE_T1 ? "T1" : "C1"));
+    padprintln("Zigbee: Starting...");
+    padprintln("Press ESC to stop");
+    padprintln("");
+
+    // Start reception
+    receiver.startReception();
+
+    // Main loop
+    uint32_t lastUpdate = 0;
+    uint32_t meterCount = 0;
+    String lastMeterId = "None";
+
+    while (!check(EscPress)) {
+        // Zigbee loop
+        zigbee.loop();
+
+        // Update display every 2 seconds
+        if (millis() - lastUpdate > 2000) {
+            tft.fillRect(BORDER_PAD_X, 80, tftWidth - 2 * BORDER_PAD_X, 60, bruceConfig.bgColor);
+            tft.setCursor(BORDER_PAD_X, 80);
+            tft.setTextColor(bruceConfig.priColor);
+
+            padprintln("Meters published: " + String(meterCount));
+            padprintln("Last: " + lastMeterId);
+            padprintln("Zigbee: " + String(zigbee.isConnected() ? "Connected" : "Joining..."));
+
+            // Show RSSI
+            int8_t rssi = receiver.getCurrentRSSI();
+            padprintln("RSSI: " + String(rssi) + " dBm");
+
+            lastUpdate = millis();
+        }
+
+        // Check for received meters
+        WMBusMeter meter;
+        if (receiver.hasMeter() && receiver.getMeter(meter)) {
+            // Publish to Zigbee
+            if (zigbee.publishMeter(meter)) {
+                meterCount++;
+                lastMeterId = meter.getIdString().substring(0, 8);
+
+                // Flash success
+                tft.fillRect(BORDER_PAD_X, tftHeight - 40, tftWidth - 2 * BORDER_PAD_X, 20, bruceConfig.bgColor);
+                tft.setCursor(BORDER_PAD_X, tftHeight - 40);
+                tft.setTextColor(TFT_GREEN);
+                padprintln("Published: " + lastMeterId);
+                delay(300);
+            }
+        }
+
+        delay(10);
+    }
+
+    // Stop
+    receiver.stopReception();
+    receiver.stop();
+
+    displayInfo("Home mode stopped", true);
 }
 
 void WMBusMenu::configMenu() {
